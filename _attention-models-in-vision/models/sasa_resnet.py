@@ -82,8 +82,7 @@ class SimpleSASAResNet(nn.Module):
         # -1×64×1×1
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Sequential(
-            nn.Linear(64, 10),
-            nn.Softmax(dim=1)
+            nn.Linear(64, 10)
         )
         self.classifier.apply(init_weights)
 

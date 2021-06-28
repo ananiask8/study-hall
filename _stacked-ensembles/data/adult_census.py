@@ -2,6 +2,8 @@ import torch
 import pandas as pd
 from torch.utils.data import Dataset
 
+from utils.stats import DatasetStats
+
 
 class AdultCensusDataset(Dataset):
     # use loss with weights; neg 76%, pos 24%
@@ -28,13 +30,18 @@ class AdultCensusDataset(Dataset):
         'native.country': lambda x: x.astype('category').cat.codes.values,  # embed in 21
         'income': lambda x: x.astype('category').cat.codes.values
     }
+    label = 'income'
 
-    def __init__(self, path='adult.csv'):
+    def __init__(self, path='data/adult.csv'):
         d = pd.read_csv(path)
         self.data = []
         for col in self.columns:
-            self.data.append(torch.Tensor(self.map[col](d[col])))
+            self.data.append(torch.LongTensor(self.map[col](d[col])))
+        label_idx = self.columns.index(self.label)
         self.data = torch.stack(self.data, dim=1)
+        x = torch.cat([self.data[:, :label_idx], self.data[:, label_idx + 1:]], dim=1)
+        y = self.data[:, label_idx].unsqueeze(-1).float()
+        self.data = list(zip(*[x, y]))
 
-    def __index__(self, i):
-        return self.data[i, :]
+    def __getitem__(self, i):
+        return self.data[i]

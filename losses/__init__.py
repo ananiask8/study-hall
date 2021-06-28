@@ -1,1 +1,2 @@
-from .LabelSmoothingLoss import LabelSmoothingLoss
+from .LabelSmoothingCrossEntropyLoss import LabelSmoothingCrossEntropyLoss
+from .CosineLoss import CosineLoss

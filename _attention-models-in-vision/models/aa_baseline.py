@@ -182,4 +182,4 @@ class AABaseline(nn.Module):
 
     def forward(self, x):
         y = self.l3(self.l2(self.l1(x))).view(-1, 10)
-        return torch.softmax(y, dim=1)
+        return y

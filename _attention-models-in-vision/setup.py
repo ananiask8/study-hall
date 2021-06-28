@@ -5,9 +5,10 @@ from torchvision import datasets as ds
 from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
 from torch.utils.data import Subset
 
-from losses import LabelSmoothingLoss
+from losses import LabelSmoothingCrossEntropyLoss, CosineLoss
 from models import Baseline, SEBaseline, AABaseline, SASABaseline, ChannelAttnBaseline,\
     SimpleResNet, SimpleSEResNet, ResNet, SEResNet, SimpleAAResNet, AAResNet, SimpleSASAResNet
+from utils.data import BalancedDataset
 from utils.runners import set_image_classification_epoch_runner
 
 
@@ -33,6 +34,7 @@ def get_model(opts):
     ✡ Test(id=SimpleSEResNet56.SGD.OneCycleLR.CIFAR10.1000.512.01, loss=1.5160, mA=0.9356) ✡
     Test(id=SimpleOrigAAResNet56.SGD.OneCycleLR.CIFAR10.1000.512.01, loss=1.5261, mA=0.9138)
     Test(id=SimpleStdAAResNet56.SGD.OneCycleLR.CIFAR10.1000.512.01, loss=1.5381, mA=0.9265)
+    Test(id=SimpleSASAResNet56.AdamW.OneCycleLR.CIFAR10.300.256.01, loss=0.8838, mA=0.8457)
     ----------------------------------------------------------------------------------------------------------------
     ✡ Test(id=SimpleResNet110.SGD.CosineAnnealingLR.CIFAR10.1000.1024.01, loss=1.5177, mA=0.9336) ✡
     Test(id=SimpleSEResNet110.SGD.CosineAnnealingLR.CIFAR10.1000.1024.01, loss=1.5231, mA=0.9319)
@@ -86,7 +88,7 @@ def get_optimizer(opts, params):
 def get_scheduler(opts, optimizer):
     return {
         'OneCycleLR': lambda: OneCycleLR(
-            optimizer, max_lr=opts.lr, total_steps=opts.epochs, anneal_strategy='linear'),
+            optimizer, max_lr=opts.lr, total_steps=opts.epochs),
         'CosineAnnealingLR': lambda: CosineAnnealingLR(
             optimizer, T_max=opts.epochs, eta_min=0, last_epoch=opts.last_epoch),
         'CosineAnnealingWarmRestarts': lambda: CosineAnnealingWarmRestarts(
@@ -99,7 +101,7 @@ def get_transforms(dataset, mode):
     Get transforms for {dataset}.{mode}.
     Uses PyTorch name standards, or custom names.
     """
-    return {
+    transforms = {
         'CIFAR10.train': lambda: t.Compose([
             t.RandomCrop(32, padding=4),
             t.RandomHorizontalFlip(),
@@ -114,7 +116,11 @@ def get_transforms(dataset, mode):
             t.ToTensor(),
             t.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
         ]),
-    }[f'{dataset}.{mode}']()
+    }
+    transforms['small.CIFAR10.train'] = transforms['CIFAR10.train']
+    transforms['small.CIFAR10.validation'] = transforms['CIFAR10.validation']
+    transforms['small.CIFAR10.test'] = transforms['CIFAR10.test']
+    return transforms[f'{dataset}.{mode}']()
 
 
 def get_dataloader(opts, mode):
@@ -137,8 +143,17 @@ def get_dataloader(opts, mode):
             ), range(5000)),
         'CIFAR10.test': lambda: ds.CIFAR10(
             root='tmp/datasets', train=False, download=True,
-            transform=get_transforms(opts.dataset_name, mode))
-    }[f'{opts.dataset_name}.{mode}']()
+            transform=get_transforms(opts.dataset_name, mode)),
+        'small.CIFAR10.train': lambda: BalancedDataset(Subset(
+            ds.CIFAR10(
+                root='tmp/datasets', train=True, download=True,
+                transform=get_transforms(opts.dataset_name, mode)
+            ), range(5000, 50000)
+        ), max_per_class=50)
+    }
+    data['small.CIFAR10.validation'] = data['CIFAR10.validation']
+    data['small.CIFAR10.test'] = data['CIFAR10.test']
+    data = data[f'{opts.dataset_name}.{mode}']()
     return torch.utils.data.DataLoader(
         data, batch_size=opts.batch_size, shuffle=is_train,
         num_workers=opts.n_threads, pin_memory=True)
@@ -153,5 +168,8 @@ def get_epoch_runner_setter(opts):
 def get_criterion(opts):
     return {
         'CrossEntropyLoss': lambda: nn.CrossEntropyLoss(reduction='none'),
-        'LabelSmoothing': lambda: LabelSmoothingLoss(smoothing=0.1, reduction='none')
+        'LabelSmoothingCrossEntropyLoss': lambda: LabelSmoothingCrossEntropyLoss(smoothing=0.1, reduction='none'),
+        'BCELoss': lambda: nn.BCELoss(reduction='none'),
+        'BCEWithLogitsLoss': lambda: nn.BCEWithLogitsLoss(pos_weight=opts.dataset_stats.class_weights, reduction='none'),
+        'CosineLoss': lambda: CosineLoss(one_hot=False, reduction='none')
     }[opts.criterion]()

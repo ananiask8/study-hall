@@ -7,6 +7,7 @@ class Checkpoint(NamedTuple):
     epoch: int = 0
     acc: float = 0.
     loss: float = float('inf')
+    f1: float = 0.
     opts: Optional[dict] = None
     model: Optional[str] = None
     optimizer: Optional[dict] = None
@@ -45,7 +46,7 @@ class CheckpointState:
             torch.save(ckpt._asdict(), join_path(self.ckpt_path, f'ckpt_{ckpt.epoch}.pth'))
 
     def get_best(self):
-        return self.ckpt.epoch, self.ckpt.acc, self.ckpt.loss
+        return self.ckpt.epoch, self.ckpt.acc, self.ckpt.loss, self.ckpt.f1
 
     def is_patience_exhausted(self):
         return self.last_updated / self.max_epochs > self.patience
