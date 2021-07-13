@@ -96,29 +96,26 @@ class F1Score(nn.Module):
         return 1 - f1.mean()
 
 
-def evaluate_calibration(preds: ndarray, targets: ndarray, name: str = '', filename: str = 'calibration.png'):
-    plt.figure(figsize=(10, 10))
+def evaluate_calibration(preds: ndarray, targets: ndarray, name: str = ''):
+    fig = plt.figure(figsize=(10, 10))
     ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
     ax2 = plt.subplot2grid((3, 1), (2, 0))
     fraction_of_positives, mean_predicted_value = calibration_curve(targets, preds, n_bins=10)
-    ax1.plot(mean_predicted_value, fraction_of_positives, "s-",
-             label="%s" % (name, ))
-
-    ax2.hist(preds, range=(0, 1), bins=10, label=name,
-             histtype="step", lw=2)
+    ax1.plot(mean_predicted_value, fraction_of_positives, 's-', label=f'{name}')
+    ax2.hist(preds, range=(0, 1), bins=10, label=name, histtype='step', lw=2)
 
     calibrated = np.arange(0, 1.1, step=0.1)
     ax1.plot(calibrated, calibrated, color='black', linestyle='dashed')
 
-    ax1.set_ylabel("Fraction of positives")
+    ax1.set_ylabel('Fraction of positives')
     ax1.set_xlim([-0.05, 1.05])
     ax1.set_ylim([-0.05, 1.05])
-    ax1.legend(loc="lower right")
+    ax1.legend(loc='lower right')
     ax1.set_title('Calibration plots (reliability curve)')
 
-    ax2.set_xlabel("Mean predicted value")
-    ax2.set_ylabel("Count")
-    ax2.legend(loc="upper center", ncol=2)
+    ax2.set_xlabel('Mean predicted value')
+    ax2.set_ylabel('Count')
+    ax2.legend(loc='upper center', ncol=2)
 
     plt.tight_layout()
-    plt.savefig(filename)
+    return fig

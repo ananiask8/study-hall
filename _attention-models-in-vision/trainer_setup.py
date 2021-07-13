@@ -4,12 +4,16 @@ from torchvision import transforms as t, datasets as ds
 from torchvision import datasets as ds
 from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
 from torch.utils.data import Subset
+from ignite.handlers import LRScheduler
+import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
 from losses import LabelSmoothingCrossEntropyLoss, CosineLoss
 from models import Baseline, SEBaseline, AABaseline, SASABaseline, ChannelAttnBaseline,\
     SimpleResNet, SimpleSEResNet, ResNet, SEResNet, SimpleAAResNet, AAResNet, SimpleSASAResNet
 from utils.data import BalancedDataset
 from utils.runners import set_image_classification_epoch_runner
+from utils.trainers import set_image_classification_trainer
 
 
 def get_model(opts):
@@ -87,12 +91,12 @@ def get_optimizer(opts, params):
 
 def get_scheduler(opts, optimizer):
     return {
-        'OneCycleLR': lambda: OneCycleLR(
-            optimizer, max_lr=opts.lr, total_steps=opts.epochs),
-        'CosineAnnealingLR': lambda: CosineAnnealingLR(
-            optimizer, T_max=opts.epochs, eta_min=0, last_epoch=opts.last_epoch),
-        'CosineAnnealingWarmRestarts': lambda: CosineAnnealingWarmRestarts(
-            optimizer, T_0=10, T_mult=2, eta_min=0, last_epoch=opts.last_epoch)
+        'OneCycleLR': lambda: LRScheduler(OneCycleLR(
+            optimizer, max_lr=opts.lr, total_steps=opts.total_steps)),
+        'CosineAnnealingLR': lambda: LRScheduler(CosineAnnealingLR(
+            optimizer, T_max=opts.total_steps, eta_min=0)),
+        'CosineAnnealingWarmRestarts': lambda: LRScheduler(CosineAnnealingWarmRestarts(
+            optimizer, T_0=10, T_mult=2, eta_min=0)),
     }[opts.scheduler_name]()
 
 
@@ -167,9 +171,46 @@ def get_epoch_runner_setter(opts):
 
 def get_criterion(opts):
     return {
-        'CrossEntropyLoss': lambda: nn.CrossEntropyLoss(reduction='none'),
-        'LabelSmoothingCrossEntropyLoss': lambda: LabelSmoothingCrossEntropyLoss(smoothing=0.1, reduction='none'),
-        'BCELoss': lambda: nn.BCELoss(reduction='none'),
-        'BCEWithLogitsLoss': lambda: nn.BCEWithLogitsLoss(pos_weight=opts.dataset_stats.class_weights, reduction='none'),
-        'CosineLoss': lambda: CosineLoss(one_hot=False, reduction='none')
+        'CrossEntropyLoss': lambda: nn.CrossEntropyLoss(reduction='mean'),
+        'LabelSmoothingCrossEntropyLoss': lambda: LabelSmoothingCrossEntropyLoss(smoothing=0.1, reduction='mean'),
+        'BCELoss': lambda: nn.BCELoss(reduction='mean'),
+        'BCEWithLogitsLoss': lambda: nn.BCEWithLogitsLoss(pos_weight=opts.dataset_stats.class_weights, reduction='mean'),
+        'CosineLoss': lambda: CosineLoss(one_hot=False, reduction='mean')
     }[opts.criterion]()
+
+
+def get_score_function(opts):
+    return {
+        'F1': lambda engine: engine.state.metrics['F1'].mean().item(),
+        'mA': lambda engine: engine.state.metrics['mA'],
+        'Mean(mP,mR,F1)': lambda engine: torch.cat([
+            engine.state.metrics['mP'],
+            engine.state.metrics['mR'],
+            engine.state.metrics['F1']
+        ]).mean().item()
+    }[opts.score_name]
+
+
+def get_tensorboard_writer(opts):
+    writer = SummaryWriter(log_dir=f'runs/{opts.timestamp}')
+    writer.add_hparams(hparam_dict={
+        'task': opts.task,
+        'dataset_name': opts.dataset_name,
+        'model_name': opts.model_name,
+        'optimizer_name': opts.optimizer_name,
+        'scheduler_name': opts.scheduler_name,
+        'lr': opts.lr,
+        'patience_factor': opts.patience_factor,
+        'batch_size': opts.batch_size,
+        'epochs': opts.epochs,
+        'run_id': opts.run_id,
+        'criterion': opts.criterion,
+        'score_name': opts.score_name
+    }, metric_dict={})
+    return writer
+
+
+def get_trainer_evaluator(opts):
+    return {
+        'image_classification': lambda: set_image_classification_trainer
+    }[opts.task]()
